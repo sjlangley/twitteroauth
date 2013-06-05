@@ -191,6 +191,14 @@ class TwitterOAuth {
    * @return API results
    */
   function http($url, $method, $postfields = NULL) {
+    if (in_array('curl', get_loaded_extensions())) {
+        return $this->curl_http($url, $method, $postfields);
+    } else {
+        return $this->stream_http($url, $method, $postfields);
+    }
+  }
+
+  function curl_http($url, $method, $postfields) {
     $this->http_info = array();
     $ci = curl_init();
     /* Curl settings */
@@ -223,6 +231,50 @@ class TwitterOAuth {
     $this->http_info = array_merge($this->http_info, curl_getinfo($ci));
     $this->url = $url;
     curl_close ($ci);
+    return $response;
+  }
+
+  function stream_http($url, $method, $postfields) {
+    $this->http_info = array();
+    $options = array(
+        'http' => array(
+            'user-agent' => $this->useragent,
+            'timeout' => $this->timeout,
+            'header' => 'Expect: \r\n',
+            'method' => $method,
+            'ignore_errors' => true,
+        ),
+        'ssl' => array(
+            'verify_peer' => $this->ssl_verifypeer,
+        )
+    );
+
+    switch ($method) {
+      case 'POST':
+        if (!empty($postfields)) {
+          $options['http']['content'] = http_build_query($postfields);
+        }
+        break;
+      case 'DELETE':
+        if (!empty($postfields)) {
+          $url = "{$url}?{$postfields}";
+        }
+        break;
+    }
+    $ctx = stream_context_create($options);
+    $response = file_get_contents($url, false, $ctx);
+    $response_header = array_shift($http_response_header);
+    preg_match('#HTTP/\d+\.\d+ (\d+)#', $response_header, $matches);
+    $this->http_code = intval($matches[1]);
+    $this->url = $url;
+    $this->http_info = array(
+        'url' => $this->url,
+        'http_code' => $this->http_code,
+    );
+    foreach($http_response_header as $header) {
+      $this->getHeader(null, $header);
+    }
+
     return $response;
   }
 
